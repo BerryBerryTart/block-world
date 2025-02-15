@@ -10,3 +10,10 @@ export interface Block {
   id: number;
 }
 
+export interface Graph {
+  data: {
+    id: string;
+    source?: string;
+    target?: string;
+  };
+}
