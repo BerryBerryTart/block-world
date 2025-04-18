@@ -17,3 +17,8 @@ export interface Graph {
     target?: string;
   };
 }
+
+export enum CurrentPlayer {
+  PLAYER_1 = "P1",
+  PLAYER_2 = "P2",
+}
