@@ -1,5 +1,8 @@
 const getBlockColour = (index: number, totalBlocks: number): string => {
-  const val = 360 * ((index + 1) / (totalBlocks + 1))
+  if (index < 0) {
+    return "rgb(240, 248, 255)";
+  }
+  const val = 360 * ((index + 1) / (totalBlocks + 1));
   return `hsl(${val}, 80%, 80%)`;
 };
 

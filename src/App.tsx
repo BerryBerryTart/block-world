@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, JSX } from "react";
 import { Board, Block, Column, Graph, CurrentPlayer } from "./interfaces";
 import cytoscape from "cytoscape";
 
 import "./App.less";
 import { getBlockColour } from "./utils";
 import resetIcon from "./assets/reset.svg";
+import { ActionCard } from "./ActionCard/ActionCard";
 
 function App() {
   const [currPlayer, setCurrPlayer] = useState<CurrentPlayer>(
@@ -21,13 +22,17 @@ function App() {
   const dragItemId = useRef(0);
   const prevDragPos = useRef(0);
   const cyRef = useRef<cytoscape.Core | undefined>(undefined);
+  const [actions, setActions] = useState<JSX.Element[]>([]);
+  const [showGraph, setShowGraph] = useState<boolean>(false);
+  const [manualControl, setManualControl] = useState<boolean>(false);
 
-  //number of blocks change so reset game
+  //number of blocks changed so reset game
   useEffect(() => {
     adjustGoalBoardCols();
     resetGame();
   }, [totalBlocks]);
 
+  //number of columns changed so reset game
   useEffect(() => {
     const boardEl = document.getElementById("board");
     if (boardEl) {
@@ -36,6 +41,7 @@ function App() {
     resetGame();
   }, [totalCols]);
 
+  //pregame setup etc
   useEffect(() => {
     const setupCols = async () => {
       const boardEl = document.getElementById("board");
@@ -125,6 +131,104 @@ function App() {
       },
     });
     boardClone.columns[dragItemPos.current].blocks.unshift(blockBuffer);
+    setBoard(boardClone);
+    const hasWon = endGameCheck(boardClone);
+    setMoveCount(moveCount + 1);
+    cyRef.current?.add(gameState.current);
+    if (!hasWon) {
+      setCurrPlayer((prevState) => {
+        if (prevState === CurrentPlayer.PLAYER_1) return CurrentPlayer.PLAYER_2;
+        return CurrentPlayer.PLAYER_1;
+      });
+    }
+  };
+
+  //avoid closures by generating actions WHEN the board has rendered
+  useEffect(() => {
+    if (board?.columns) generateActions();
+  }, [board]);
+
+  //limit to four actions?
+  const generateActions = () => {
+    const ACTION_LIMIT = 4;
+    const boardCols = board.columns;
+    const actionSet = new Set<string>();
+
+    //generate all possible actions
+    for (let fromIndex = 0; fromIndex < boardCols.length; fromIndex++) {
+      const fCol = boardCols[fromIndex].blocks;
+      if (fCol.length === 0) continue;
+      for (let toIndex = 0; toIndex < boardCols.length; toIndex++) {
+        if (fromIndex === toIndex) continue;
+        const tCol = boardCols[toIndex].blocks;
+
+        //no need to move one block from the table to the table
+        if (fCol.length === 1 && tCol.length === 0) continue;
+        const fromBlock = fCol[0].id;
+        const toBlock = tCol[0]?.id ?? -1;
+        actionSet.add(`${fromBlock}|${toBlock}`);
+      }
+    }
+
+    //create action options
+    const actionBuffer = Array.from(actionSet);
+    const actionElements: JSX.Element[] = [];
+
+    //[TODO]: Generate better options instead of doing it randomly
+    shuffle(actionBuffer);
+    for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
+      const a = actionBuffer[i].split("|");
+      const f = Number(a[0]);
+      const t = Number(a[1]);
+      let fIndex = -1;
+      let tIndex = -1;
+      //find index for each
+      for (let j = 0; j < boardCols.length; j++) {
+        const blocks = boardCols[j].blocks;
+        if (blocks[0]?.id === f && fIndex === -1) {
+          fIndex = j;
+        }
+        if (blocks[0]?.id === t && tIndex === -1) {
+          tIndex = j;
+        }
+        //finds table
+        if (blocks.length === 0 && t === -1 && tIndex === -1) {
+          tIndex = j;
+        }
+      }
+      const el = (
+        <ActionCard
+          from={f}
+          to={t}
+          totalBlocks={totalBlocks}
+          key={actionBuffer[i]}
+          clickFunc={() => playAction(fIndex, tIndex, f, t)}
+        />
+      );
+      actionElements.push(el);
+    }
+    setActions(actionElements);
+  };
+
+  const playAction = (
+    fromIndex: number,
+    toIndex: number,
+    source: number,
+    target: number
+  ) => {
+    const boardClone = structuredClone(board);
+    const blockBuffer = boardClone.columns[fromIndex].blocks.shift() as Block;
+    boardClone.columns[toIndex].blocks.unshift(blockBuffer);
+
+    //graph stuff
+    gameState.current.push({
+      data: {
+        id: `${source}-${target}`,
+        source: source.toString(),
+        target: target > 0 ? target.toString() : "TABLE",
+      },
+    });
+
     setBoard(boardClone);
     const hasWon = endGameCheck(boardClone);
     setMoveCount(moveCount + 1);
@@ -242,7 +346,7 @@ function App() {
               <div
                 key={block.id}
                 className={isMainBoard ? "block" : "goal-block"}
-                draggable={blockIndex === 0 && !endGame}
+                draggable={blockIndex === 0 && !endGame && manualControl}
                 onDragStart={(e) => dragStart(e, index, block.id)}
                 onDragEnd={drop}
                 style={{
@@ -260,38 +364,68 @@ function App() {
 
   return (
     <div>
-      <div id="resetContainer" onClick={resetGraphView}>
-        <img id="resetIcon" src={resetIcon} />
-        <span>Reset Graph View</span>
-      </div>
-
       <div id="gameContainer">
-        <div id="cy" />
+        <div id="cy" style={{ opacity: showGraph ? "1" : "0" }} />
         <div id="board">{board.columns && renderBoard()}</div>
         <div id="goal">
           <div id="goalBoard">{goalBoard.columns && renderBoard(false)}</div>
           <div id="goalText">GOAL STATE</div>
+          <button
+            className="controlButton"
+            onClick={() => setManualControl((p) => !p)}
+          >
+            {manualControl ? "Card Choice Mode" : "Full Manual Mode"}
+          </button>
+          <button
+            className="controlButton"
+            onClick={() => setShowGraph((p) => !p)}
+          >
+            {showGraph ? "Hide State Graph" : "Show State Graph"}
+          </button>
+          {showGraph && (
+            <button
+              className="controlButton"
+              id="resetContainer"
+              onClick={resetGraphView}
+            >
+              <img id="resetIcon" src={resetIcon} />
+              <span>Reset Graph View</span>
+            </button>
+          )}
         </div>
         <div id="info">
-          <div>
-            <div>Turn Count: {moveCount}</div>
+          <div id="leftControls">
+            <div className="infoText">Turn Count: {moveCount}</div>
             {!endGame ? (
-              <div>
+              <div className="infoText">
                 Player {currPlayer === CurrentPlayer.PLAYER_1 ? 1 : 2}'s Turn
               </div>
             ) : (
-              <div>
+              <div className="infoText">
                 Player {currPlayer === CurrentPlayer.PLAYER_1 ? 1 : 2} Wins!!!
               </div>
             )}
+            {!endGame && (
+              <button className="controlButton" onClick={resetGame}>
+                RESET BOARD
+              </button>
+            )}
+            {endGame && (
+              <div id="endGameContainer">
+                <button className="controlButton" onClick={resetGame}>
+                  PLAY AGAIN?
+                </button>
+              </div>
+            )}
           </div>
-          {!endGame && <button onClick={resetGame}>RESET BOARD</button>}
-          {endGame && (
-            <div id="endGameContainer">
-              <div id="endHeader">Game Over.</div>
-              <button onClick={resetGame}>PLAY AGAIN?</button>
-            </div>
-          )}
+          <div id="middleControls">
+            {endGame && <div id="endHeader">Game Over.</div>}
+            {!manualControl && !endGame && <div id="actions">{actions}</div>}
+            {!manualControl && !endGame && (
+              <div id="moveHeader">Pick A Move</div>
+            )}
+          </div>
+
           <div id="controls">
             <label htmlFor="numBlocks">Total Blocks ({totalBlocks}): </label>
             <input
@@ -299,7 +433,7 @@ function App() {
               name="numBlocks"
               step={1}
               min={3}
-              max={20}
+              max={10}
               value={totalBlocks}
               onChange={(e) => setTotalBlocks(parseInt(e.target.value))}
             />
@@ -308,7 +442,7 @@ function App() {
               type="range"
               name="numCols"
               step={1}
-              min={3}
+              min={4}
               max={10}
               value={totalCols}
               onChange={(e) => setTotalCols(parseInt(e.target.value))}
