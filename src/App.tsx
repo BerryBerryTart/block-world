@@ -5,6 +5,7 @@ import cytoscape from "cytoscape";
 import "./App.less";
 import { getBlockColour } from "./utils";
 import resetIcon from "./assets/reset.svg";
+import { astar, chooseAIMove } from "./ai";
 import { ActionCard } from "./ActionCard/ActionCard";
 
 function App() {
@@ -144,71 +145,102 @@ function App() {
   };
 
   //avoid closures by generating actions WHEN the board has rendered
-  useEffect(() => {
-    if (board?.columns) generateActions();
-  }, [board]);
+  // useEffect(() => {
+  //   if (
+  //     !manualControl &&                       // still in “button” mode
+  //     currPlayer === CurrentPlayer.PLAYER_2 && !endGame
+  //   ) {
+  //     handleAIClick(true);   // or false for permanent adversary
+  //   }
+  // }, [currPlayer, manualControl, endGame, board, goalBoard]);
+  
 
-  //limit to four actions?
-  const generateActions = () => {
-    const ACTION_LIMIT = 4;
-    const boardCols = board.columns;
-    const actionSet = new Set<string>();
+  // //limit to four actions?
+  // const generateActions = () => {
+  //   const ACTION_LIMIT = 4;
+  //   const boardCols = board.columns;
+  //   const actionSet = new Set<string>();
 
-    //generate all possible actions
-    for (let fromIndex = 0; fromIndex < boardCols.length; fromIndex++) {
-      const fCol = boardCols[fromIndex].blocks;
-      if (fCol.length === 0) continue;
-      for (let toIndex = 0; toIndex < boardCols.length; toIndex++) {
-        if (fromIndex === toIndex) continue;
-        const tCol = boardCols[toIndex].blocks;
+  //   //generate all possible actions
+  //   for (let fromIndex = 0; fromIndex < boardCols.length; fromIndex++) {
+  //     const fCol = boardCols[fromIndex].blocks;
+  //     if (fCol.length === 0) continue;
+  //     for (let toIndex = 0; toIndex < boardCols.length; toIndex++) {
+  //       if (fromIndex === toIndex) continue;
+  //       const tCol = boardCols[toIndex].blocks;
 
-        //no need to move one block from the table to the table
-        if (fCol.length === 1 && tCol.length === 0) continue;
-        const fromBlock = fCol[0].id;
-        const toBlock = tCol[0]?.id ?? -1;
-        actionSet.add(`${fromBlock}|${toBlock}`);
+  //       //no need to move one block from the table to the table
+  //       if (fCol.length === 1 && tCol.length === 0) continue;
+  //       const fromBlock = fCol[0].id;
+  //       const toBlock = tCol[0]?.id ?? -1;
+  //       actionSet.add(`${fromBlock}|${toBlock}`);
+  //     }
+  //   }
+
+  //   //create action options
+  //   const actionBuffer = Array.from(actionSet);
+  //   const actionElements: JSX.Element[] = [];
+
+  //   //[TODO]: Generate better options instead of doing it randomly
+  //   shuffle(actionBuffer);
+  //   for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
+  //     const a = actionBuffer[i].split("|");
+  //     const f = Number(a[0]);
+  //     const t = Number(a[1]);
+  //     let fIndex = -1;
+  //     let tIndex = -1;
+  //     //find index for each
+  //     for (let j = 0; j < boardCols.length; j++) {
+  //       const blocks = boardCols[j].blocks;
+  //       if (blocks[0]?.id === f && fIndex === -1) {
+  //         fIndex = j;
+  //       }
+  //       if (blocks[0]?.id === t && tIndex === -1) {
+  //         tIndex = j;
+  //       }
+  //       //finds table
+  //       if (blocks.length === 0 && t === -1 && tIndex === -1) {
+  //         tIndex = j;
+  //       }
+  //     }
+  //     const el = (
+  //       <ActionCard
+  //         from={f}
+  //         to={t}
+  //         totalBlocks={totalBlocks}
+  //         key={actionBuffer[i]}
+  //         clickFunc={() => playAction(fIndex, tIndex, f, t)}
+  //       />
+  //     );
+  //     actionElements.push(el);
+  //   }
+  //   setActions(actionElements);
+  // };
+
+  const handleAIClick = (helperMode: boolean) => {
+    if (endGame) return;                       // game already over
+    /* ask minimax for the best move (helper-AI, depth 4) */
+    const mv = astar(board, goalBoard);
+    console.log("⋙ astar returned:", mv);
+    if (!mv) return;                           // already at goal
+  
+    let destIdx = mv[0].toIdx;
+    console.log("AI move: ", mv[0].fromIdx, mv[0].toIdx);
+    if (destIdx === null) {
+      destIdx = board.columns.findIndex(c => c.blocks.length === 0);
+      if (destIdx === -1) {
+        console.warn("AI wanted to use the table, but no empty column exists.");
+        return;                              // skip the move
       }
     }
-
-    //create action options
-    const actionBuffer = Array.from(actionSet);
-    const actionElements: JSX.Element[] = [];
-
-    //[TODO]: Generate better options instead of doing it randomly
-    shuffle(actionBuffer);
-    for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
-      const a = actionBuffer[i].split("|");
-      const f = Number(a[0]);
-      const t = Number(a[1]);
-      let fIndex = -1;
-      let tIndex = -1;
-      //find index for each
-      for (let j = 0; j < boardCols.length; j++) {
-        const blocks = boardCols[j].blocks;
-        if (blocks[0]?.id === f && fIndex === -1) {
-          fIndex = j;
-        }
-        if (blocks[0]?.id === t && tIndex === -1) {
-          tIndex = j;
-        }
-        //finds table
-        if (blocks.length === 0 && t === -1 && tIndex === -1) {
-          tIndex = j;
-        }
-      }
-      const el = (
-        <ActionCard
-          from={f}
-          to={t}
-          totalBlocks={totalBlocks}
-          key={actionBuffer[i]}
-          clickFunc={() => playAction(fIndex, tIndex, f, t)}
-        />
-      );
-      actionElements.push(el);
-    }
-    setActions(actionElements);
-  };
+  
+    /* source & target IDs for graph */
+    const sourceId = board.columns[mv[0].fromIdx].blocks[0].id;
+    const targetId =
+      board.columns[destIdx].blocks[0]?.id ?? -1;   // -1 means TABLE
+  
+    playAction(mv[0].fromIdx, destIdx, sourceId, targetId)
+  };  
 
   const playAction = (
     fromIndex: number,
@@ -374,7 +406,7 @@ function App() {
             className="controlButton"
             onClick={() => setManualControl((p) => !p)}
           >
-            {manualControl ? "Card Choice Mode" : "Full Manual Mode"}
+            {manualControl ? "Against AI mode" : "Full Manual Mode"}
           </button>
           <button
             className="controlButton"
@@ -420,9 +452,27 @@ function App() {
           </div>
           <div id="middleControls">
             {endGame && <div id="endHeader">Game Over.</div>}
-            {!manualControl && !endGame && <div id="actions">{actions}</div>}
             {!manualControl && !endGame && (
-              <div id="moveHeader">Pick A Move</div>
+                <>
+                  <button
+                    className="controlButton"
+                    onClick={() => handleAIClick(true)}        // cooperative AI
+                    disabled={false}
+                  >
+                    Helper AI
+                  </button>
+                  <button
+                    className="controlButton"
+                    onClick={() => handleAIClick(false)}       // adversarial AI
+                    disabled={false}
+                  >
+                    Hinder AI
+                  </button>
+                </>
+              )           
+            }
+            {!manualControl && !endGame && (
+              <div id="moveHeader">Select an AI Mode</div>
             )}
           </div>
 
