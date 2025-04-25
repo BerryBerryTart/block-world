@@ -12,5 +12,10 @@ declare module "./ai" {
     export function astar(
       board: any, goalBoard: any
     ): AIMove[] | null;
+
+    export function boardToState(board: Board): number[][];
+
+    export function stateKey(state: number[][]): string;
+   
   }
 export{};

@@ -14,7 +14,7 @@ export function boardToState(board) {
   }
   
   /* Hash key that IGNORES table order but **does not** mutate the array.      */
-  function stateKey(state) {
+export function stateKey(state) {
     // convert each stack to "3,1" etc., sort them, join with '|'
     return [...state].map(stk => stk.join(",")).sort().join("|");
   }
