@@ -1,11 +1,21 @@
 import { useState, useEffect, useRef, JSX } from "react";
-import { Board, Block, Column, Graph, CurrentPlayer } from "./interfaces";
+import {
+  Board,
+  Block,
+  Column,
+  Graph,
+  CurrentPlayer,
+  GameMode,
+  AIStrategy,
+  MoveHistory,
+} from "./interfaces";
 import cytoscape from "cytoscape";
 
 import "./App.less";
 import { getBlockColour } from "./utils";
 import resetIcon from "./assets/reset.svg";
 import { ActionCard } from "./ActionCard/ActionCard";
+import { astar, chooseAIMove } from "./ai/ai";
 
 function App() {
   const [currPlayer, setCurrPlayer] = useState<CurrentPlayer>(
@@ -13,8 +23,7 @@ function App() {
   );
   const [board, setBoard] = useState<Board>({} as Board);
   const [goalBoard, setGoalBoard] = useState<Board>({} as Board);
-  const [moveCount, setMoveCount] = useState(0);
-  const [endGame, setEndGame] = useState(false);
+  const [moveCount, setMoveCount] = useState(1);
   const [totalBlocks, setTotalBlocks] = useState(5);
   const [totalCols, setTotalCols] = useState(6);
   const gameState = useRef<Graph[]>([]);
@@ -24,7 +33,13 @@ function App() {
   const cyRef = useRef<cytoscape.Core | undefined>(undefined);
   const [actions, setActions] = useState<JSX.Element[]>([]);
   const [showGraph, setShowGraph] = useState<boolean>(false);
-  const [manualControl, setManualControl] = useState<boolean>(false);
+  const [showHistory, setShowHistory] = useState<boolean>(true);
+  const [gameModeType, setGameModeType] = useState<GameMode>(GameMode.MANUAL);
+  const [aIStrategy, setAIStrategy] = useState<AIStrategy>(
+    AIStrategy.PLAY_TO_WIN
+  );
+  const [moveHistory, setMoveHistory] = useState<MoveHistory[]>([]);
+  const [winner, setWinner] = useState<CurrentPlayer | undefined>(undefined);
 
   //number of blocks changed so reset game
   useEffect(() => {
@@ -88,6 +103,29 @@ function App() {
     });
   }, []);
 
+  //limit block count for performance
+  useEffect(() => {
+    if (gameModeType === GameMode.VS_AI) {
+      let blockBuffer = totalBlocks;
+      if (blockBuffer > 7) {
+        blockBuffer = 7;
+        setTotalBlocks(7);
+      }
+      setTotalCols(blockBuffer + 1);
+    }
+  }, [gameModeType]);
+
+  useEffect(() => {
+    if (
+      gameModeType === GameMode.VS_AI &&
+      currPlayer === CurrentPlayer.PLAYER_2
+    ) {
+      //Makes play for AI
+      handleAIClick(aIStrategy === AIStrategy.PLAY_TO_WIN);
+      setCurrPlayer(CurrentPlayer.PLAYER_1);
+    }
+  }, [currPlayer, gameModeType]);
+
   const adjustGoalBoardCols = () => {
     const goalEl = document.getElementById("goalBoard");
     if (goalEl) {
@@ -119,28 +157,15 @@ function App() {
     const blockBuffer = colRef.splice(blockIndex, 1)[0];
     const targetCol = boardClone.columns[dragItemPos.current].blocks;
 
-    //graph stuff
-    const source = blockBuffer.id.toString();
-    const target =
-      targetCol.length === 0 ? "TABLE" : targetCol[0].id.toString();
-    gameState.current.push({
-      data: {
-        id: `${source}-${target}`,
-        source,
-        target,
-      },
-    });
-    boardClone.columns[dragItemPos.current].blocks.unshift(blockBuffer);
-    setBoard(boardClone);
-    const hasWon = endGameCheck(boardClone);
-    setMoveCount(moveCount + 1);
-    cyRef.current?.add(gameState.current);
-    if (!hasWon) {
-      setCurrPlayer((prevState) => {
-        if (prevState === CurrentPlayer.PLAYER_1) return CurrentPlayer.PLAYER_2;
-        return CurrentPlayer.PLAYER_1;
-      });
-    }
+    const source = blockBuffer.id;
+    const target = targetCol.length === 0 ? "TABLE" : targetCol[0].id;
+
+    playAction(
+      prevDragPos.current,
+      dragItemPos.current,
+      source,
+      target === "TABLE" ? -1 : target
+    );
   };
 
   //avoid closures by generating actions WHEN the board has rendered
@@ -150,7 +175,7 @@ function App() {
 
   //limit to four actions?
   const generateActions = () => {
-    const ACTION_LIMIT = 4;
+    const ACTION_LIMIT = 5;
     const boardCols = board.columns;
     const actionSet = new Set<string>();
 
@@ -175,6 +200,8 @@ function App() {
     const actionElements: JSX.Element[] = [];
 
     //[TODO]: Generate better options instead of doing it randomly
+    //first strat: find moves to build towards goal state
+    //fallback: find moves to resolve deadlocks
     shuffle(actionBuffer);
     for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
       const a = actionBuffer[i].split("|");
@@ -229,11 +256,20 @@ function App() {
       },
     });
 
+    //Append to move history
+    const move: MoveHistory = {
+      move: `${source}|${target}`,
+      player: currPlayer,
+      moveCount,
+    };
+    setMoveHistory([move, ...moveHistory]);
+
     setBoard(boardClone);
     const hasWon = endGameCheck(boardClone);
-    setMoveCount(moveCount + 1);
+
     cyRef.current?.add(gameState.current);
     if (!hasWon) {
+      setMoveCount(moveCount + 1);
       setCurrPlayer((prevState) => {
         if (prevState === CurrentPlayer.PLAYER_1) return CurrentPlayer.PLAYER_2;
         return CurrentPlayer.PLAYER_1;
@@ -263,10 +299,10 @@ function App() {
     for (let i = 0; i < boardClone.columns.length; i++) {
       const blocks = boardClone.columns[i].blocks;
       hasWon = isSorted(blocks);
-      if (!hasWon) return;
+      if (!hasWon) return false;
     }
     if (hasWon) {
-      setEndGame(true);
+      setWinner(currPlayer);
     }
     return hasWon;
   };
@@ -319,17 +355,18 @@ function App() {
   };
 
   const resetGame = () => {
-    setEndGame(false);
+    setWinner(undefined);
     const newCols = randomiseBoard();
     setBoard({ columns: newCols });
     const newGoal = randomiseBoard(true);
     setGoalBoard({ columns: newGoal });
-    setMoveCount(0);
+    setMoveCount(1);
     cyRef.current?.elements().remove();
     gameState.current = initGraph();
     cyRef.current?.add(gameState.current);
     cyRef.current?.layout({ name: "circle" }).run();
     setCurrPlayer(CurrentPlayer.PLAYER_1);
+    setMoveHistory([]);
   };
 
   const renderBoard = (isMainBoard = true) => {
@@ -346,7 +383,7 @@ function App() {
               <div
                 key={block.id}
                 className={isMainBoard ? "block" : "goal-block"}
-                draggable={blockIndex === 0 && !endGame && manualControl}
+                draggable={blockIndex === 0 && !winner && isDraggable()}
                 onDragStart={(e) => dragStart(e, index, block.id)}
                 onDragEnd={drop}
                 style={{
@@ -362,24 +399,190 @@ function App() {
     });
   };
 
+  const handleGameModeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setGameModeType(event.target.value as GameMode);
+  };
+
+  const handleBlockCountChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const numBlocks = parseInt(event.target.value);
+    setTotalBlocks(numBlocks);
+    if (gameModeType === GameMode.VS_AI) {
+      setTotalCols(numBlocks + 1);
+    }
+  };
+
+  const isDraggable = () => {
+    if (gameModeType === GameMode.MANUAL) return true;
+    if (
+      gameModeType === GameMode.VS_AI &&
+      currPlayer === CurrentPlayer.PLAYER_1
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleAIClick = (helperMode: boolean) => {
+    /* ask minimax for the best move (helper-AI, depth 4) */
+    let mv: { fromIdx: number; toIdx: number | null } | null = null;
+    if (helperMode) {
+      const path = astar(board, goalBoard);
+      if (!path || path.length === 0) {
+        console.warn("Already at goal or no A* path found");
+        return;
+      }
+      mv = path[0];
+    } else {
+      mv = chooseAIMove(board, goalBoard, /*depth=*/ 4, /*helperMode=*/ false);
+      if (!mv) {
+        console.warn("Already at goal or minimax had no move");
+        return;
+      }
+    }
+
+    let destIdx = mv.toIdx;
+    //console.log("AI move: ", mv.fromIdx, mv.toIdx);
+    if (destIdx === null) {
+      destIdx = board.columns.findIndex((c) => c.blocks.length === 0);
+      if (destIdx === -1) {
+        console.warn("AI wanted to use the table, but no empty column exists.");
+        return; // skip the move
+      }
+    }
+
+    /* source & target IDs for graph */
+    const sourceId = board.columns[mv.fromIdx].blocks[0].id;
+    const targetId = board.columns[destIdx].blocks[0]?.id ?? -1; // -1 means TABLE
+
+    playAction(mv.fromIdx, destIdx, sourceId, targetId);
+  };
+
+  const handleGraphToggle = () => {
+    if (showHistory) setShowHistory(false);
+    setShowGraph((p) => !p);
+  };
+
+  const handleHistoryToggle = () => {
+    if (showGraph) setShowGraph(false);
+    setShowHistory((p) => !p);
+  };
+
+  const getPlayerName = (p: CurrentPlayer) => {
+    if (p === CurrentPlayer.PLAYER_1) return "Player 1";
+    if (p === CurrentPlayer.PLAYER_2) {
+      return gameModeType === GameMode.VS_AI ? "Computer" : "Player 2";
+    }
+    return ""; //should be unreachable
+  };
+
+  const renderGameHistory = () => {
+    const elements: JSX.Element[] = [];
+    for (let i = 0; i < moveHistory.length; i++) {
+      const move = moveHistory[i];
+      const from = Number(move.move.split("|")[0]);
+      const to = Number(move.move.split("|")[1]);
+      elements.push(
+        <div className="historyEntry" key={`${move.move}${move.moveCount}`}>
+          <span className="historyLabel">
+            Move {move.moveCount} ({getPlayerName(move.player)})
+          </span>
+          <ActionCard
+            from={from}
+            to={to}
+            totalBlocks={totalBlocks}
+            history={true}
+          />
+        </div>
+      );
+    }
+
+    return elements;
+  };
+
   return (
     <div>
       <div id="gameContainer">
         <div id="cy" style={{ opacity: showGraph ? "1" : "0" }} />
+        {showHistory && <div id="history">{renderGameHistory()}</div>}
         <div id="board">{board.columns && renderBoard()}</div>
         <div id="goal">
           <div id="goalBoard">{goalBoard.columns && renderBoard(false)}</div>
-          <div id="goalText">GOAL STATE</div>
-          <button
-            className="controlButton"
-            onClick={() => setManualControl((p) => !p)}
-          >
-            {manualControl ? "Card Choice Mode" : "Full Manual Mode"}
+          <div className="labelText">GOAL STATE</div>
+          <div className="divider"></div>
+          <div id="modeSelect">
+            <div className="labelText">Select Game Mode</div>
+            <input
+              className="radioInput"
+              type="radio"
+              id="full-manual"
+              name="full-manual"
+              value={GameMode.MANUAL}
+              onChange={handleGameModeChange}
+              checked={gameModeType === GameMode.MANUAL}
+            />
+            <label htmlFor="full-manual" className="radioLabel">
+              Manual Selection
+            </label>
+            <input
+              className="radioInput"
+              type="radio"
+              id="card-select"
+              name="card-select"
+              value={GameMode.CARD_CHOICE}
+              onChange={handleGameModeChange}
+              checked={gameModeType === GameMode.CARD_CHOICE}
+            />
+            <label htmlFor="card-select" className="radioLabel">
+              Card Selection
+            </label>
+            <input
+              className="radioInput"
+              type="radio"
+              id="vs-ai"
+              name="vs-ai"
+              value={GameMode.VS_AI}
+              onChange={handleGameModeChange}
+              checked={gameModeType === GameMode.VS_AI}
+            />
+            <label htmlFor="vs-ai" className="radioLabel">
+              Versus AI
+            </label>
+          </div>
+          <div className="divider"></div>
+          <div id="ai-mode">
+            <div className="labelText">Select AI Strategy</div>
+            <input
+              className="radioInput"
+              type="radio"
+              id={AIStrategy.PLAY_TO_WIN}
+              name={AIStrategy.PLAY_TO_WIN}
+              value={AIStrategy.PLAY_TO_WIN}
+              onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
+              checked={aIStrategy === AIStrategy.PLAY_TO_WIN}
+            />
+            <label htmlFor={AIStrategy.PLAY_TO_WIN} className="radioLabel">
+              Play To Win
+            </label>
+            <input
+              className="radioInput"
+              type="radio"
+              id={AIStrategy.PLAY_TO_STALL}
+              name={AIStrategy.PLAY_TO_STALL}
+              value={AIStrategy.PLAY_TO_STALL}
+              onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
+              checked={aIStrategy === AIStrategy.PLAY_TO_STALL}
+            />
+            <label htmlFor={AIStrategy.PLAY_TO_STALL} className="radioLabel">
+              Play To Stall
+            </label>
+          </div>
+          <div className="divider"></div>
+          <button className="controlButton" onClick={handleHistoryToggle}>
+            {showHistory ? "Hide Move History" : "Show Move History"}
           </button>
-          <button
-            className="controlButton"
-            onClick={() => setShowGraph((p) => !p)}
-          >
+          <button className="controlButton" onClick={handleGraphToggle}>
             {showGraph ? "Hide State Graph" : "Show State Graph"}
           </button>
           {showGraph && (
@@ -396,21 +599,17 @@ function App() {
         <div id="info">
           <div id="leftControls">
             <div className="infoText">Turn Count: {moveCount}</div>
-            {!endGame ? (
-              <div className="infoText">
-                Player {currPlayer === CurrentPlayer.PLAYER_1 ? 1 : 2}'s Turn
-              </div>
+            {!winner ? (
+              <div className="infoText">{getPlayerName(currPlayer)}'s Turn</div>
             ) : (
-              <div className="infoText">
-                Player {currPlayer === CurrentPlayer.PLAYER_1 ? 1 : 2} Wins!!!
-              </div>
+              <div className="infoText">{getPlayerName(winner)} Wins!!!</div>
             )}
-            {!endGame && (
+            {!winner && (
               <button className="controlButton" onClick={resetGame}>
                 RESET BOARD
               </button>
             )}
-            {endGame && (
+            {winner && (
               <div id="endGameContainer">
                 <button className="controlButton" onClick={resetGame}>
                   PLAY AGAIN?
@@ -419,13 +618,17 @@ function App() {
             )}
           </div>
           <div id="middleControls">
-            {endGame && <div id="endHeader">Game Over.</div>}
-            {!manualControl && !endGame && <div id="actions">{actions}</div>}
-            {!manualControl && !endGame && (
-              <div id="moveHeader">Pick A Move</div>
+            {winner && <div id="endHeader">Game Over.</div>}
+            {gameModeType === GameMode.CARD_CHOICE && !winner && (
+              <div id="moveHeader">
+                Player {currPlayer === CurrentPlayer.PLAYER_1 ? 1 : 2}: Select
+                Move
+              </div>
+            )}
+            {gameModeType === GameMode.CARD_CHOICE && !winner && (
+              <div id="actions">{actions}</div>
             )}
           </div>
-
           <div id="controls">
             <label htmlFor="numBlocks">Total Blocks ({totalBlocks}): </label>
             <input
@@ -433,20 +636,24 @@ function App() {
               name="numBlocks"
               step={1}
               min={3}
-              max={10}
+              max={gameModeType === GameMode.VS_AI ? 7 : 10}
               value={totalBlocks}
-              onChange={(e) => setTotalBlocks(parseInt(e.target.value))}
+              onChange={handleBlockCountChange}
             />
-            <label htmlFor="numCols">Total Cols ({totalCols}): </label>
-            <input
-              type="range"
-              name="numCols"
-              step={1}
-              min={4}
-              max={10}
-              value={totalCols}
-              onChange={(e) => setTotalCols(parseInt(e.target.value))}
-            />
+            {gameModeType !== GameMode.VS_AI && (
+              <>
+                <label htmlFor="numCols">Total Cols ({totalCols}): </label>
+                <input
+                  type="range"
+                  name="numCols"
+                  step={1}
+                  min={4}
+                  max={9}
+                  value={totalCols}
+                  onChange={(e) => setTotalCols(parseInt(e.target.value))}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>

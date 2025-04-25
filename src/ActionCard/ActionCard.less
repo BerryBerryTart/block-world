@@ -1,4 +1,4 @@
-.actionCard{
+.actionCard {
   margin: 0px 10px 0px 10px;
   display: flex;
   flex-direction: row;
@@ -10,12 +10,19 @@
   cursor: pointer;
   user-select: none;
   transition: transform 0.2s;
-  .transferIcon{
+  width: fit-content;
+  .transferIcon {
     height: 20px;
     margin: 0px 10px 0px 10px;
   }
-
 }
 .actionCard:hover {
   transform: translateY(-5px);
+}
+.historyCard {
+  margin-left: 0px;
+}
+.historyCard:hover {
+  transform: none;
+  cursor: default;
 }

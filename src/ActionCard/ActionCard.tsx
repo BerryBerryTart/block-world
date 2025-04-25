@@ -6,11 +6,12 @@ interface ActionProps {
   from: number;
   to: number;
   totalBlocks: number;
-  clickFunc: () => void;
+  clickFunc?: () => void;
+  history?: boolean;
 }
 
 export const ActionCard = (props: ActionProps) => {
-  const { from, to, totalBlocks, clickFunc } = props;
+  const { from, to, totalBlocks, clickFunc, history } = props;
   const getBgGradient = () => {
     const start = getBlockColour(from, totalBlocks);
     const end = getBlockColour(to, totalBlocks);
@@ -18,9 +19,9 @@ export const ActionCard = (props: ActionProps) => {
   };
   return (
     <div
-      className="actionCard"
+      className={history ? "historyCard actionCard" : "actionCard"}
       style={{ background: getBgGradient() }}
-      onClick={() => clickFunc()}
+      onClick={clickFunc ? () => clickFunc() : undefined}
     >
       <span>{from > 0 ? from : "TABLE"}</span>
       <img className="transferIcon" src={arrow} alt={`move ${from} to ${to}`} />
