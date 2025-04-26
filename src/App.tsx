@@ -201,77 +201,72 @@ function App() {
   };
 
   //avoid closures by generating actions WHEN the board has rendered
-  // useEffect(() => {
-  //   if (
-  //     !manualControl &&                       // still in “button” mode
-  //     currPlayer === CurrentPlayer.PLAYER_2 && !endGame
-  //   ) {
-  //     handleAIClick(true);   // or false for permanent adversary
-  //   }
-  // }, [currPlayer, manualControl, endGame, board, goalBoard]);
+  useEffect(() => {
+    if (board?.columns) generateActions();
+  }, [board]);
   
 
-  // //limit to four actions?
-  // const generateActions = () => {
-  //   const ACTION_LIMIT = 4;
-  //   const boardCols = board.columns;
-  //   const actionSet = new Set<string>();
+  //limit to four actions?
+  const generateActions = () => {
+    const ACTION_LIMIT = 4;
+    const boardCols = board.columns;
+    const actionSet = new Set<string>();
 
-  //   //generate all possible actions
-  //   for (let fromIndex = 0; fromIndex < boardCols.length; fromIndex++) {
-  //     const fCol = boardCols[fromIndex].blocks;
-  //     if (fCol.length === 0) continue;
-  //     for (let toIndex = 0; toIndex < boardCols.length; toIndex++) {
-  //       if (fromIndex === toIndex) continue;
-  //       const tCol = boardCols[toIndex].blocks;
+    //generate all possible actions
+    for (let fromIndex = 0; fromIndex < boardCols.length; fromIndex++) {
+      const fCol = boardCols[fromIndex].blocks;
+      if (fCol.length === 0) continue;
+      for (let toIndex = 0; toIndex < boardCols.length; toIndex++) {
+        if (fromIndex === toIndex) continue;
+        const tCol = boardCols[toIndex].blocks;
 
-  //       //no need to move one block from the table to the table
-  //       if (fCol.length === 1 && tCol.length === 0) continue;
-  //       const fromBlock = fCol[0].id;
-  //       const toBlock = tCol[0]?.id ?? -1;
-  //       actionSet.add(`${fromBlock}|${toBlock}`);
-  //     }
-  //   }
+        //no need to move one block from the table to the table
+        if (fCol.length === 1 && tCol.length === 0) continue;
+        const fromBlock = fCol[0].id;
+        const toBlock = tCol[0]?.id ?? -1;
+        actionSet.add(`${fromBlock}|${toBlock}`);
+      }
+    }
 
-  //   //create action options
-  //   const actionBuffer = Array.from(actionSet);
-  //   const actionElements: JSX.Element[] = [];
+    //create action options
+    const actionBuffer = Array.from(actionSet);
+    const actionElements: JSX.Element[] = [];
 
-  //   //[TODO]: Generate better options instead of doing it randomly
-  //   shuffle(actionBuffer);
-  //   for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
-  //     const a = actionBuffer[i].split("|");
-  //     const f = Number(a[0]);
-  //     const t = Number(a[1]);
-  //     let fIndex = -1;
-  //     let tIndex = -1;
-  //     //find index for each
-  //     for (let j = 0; j < boardCols.length; j++) {
-  //       const blocks = boardCols[j].blocks;
-  //       if (blocks[0]?.id === f && fIndex === -1) {
-  //         fIndex = j;
-  //       }
-  //       if (blocks[0]?.id === t && tIndex === -1) {
-  //         tIndex = j;
-  //       }
-  //       //finds table
-  //       if (blocks.length === 0 && t === -1 && tIndex === -1) {
-  //         tIndex = j;
-  //       }
-  //     }
-  //     const el = (
-  //       <ActionCard
-  //         from={f}
-  //         to={t}
-  //         totalBlocks={totalBlocks}
-  //         key={actionBuffer[i]}
-  //         clickFunc={() => playAction(fIndex, tIndex, f, t)}
-  //       />
-  //     );
-  //     actionElements.push(el);
-  //   }
-  //   setActions(actionElements);
-  // };
+    //[TODO]: Generate better options instead of doing it randomly
+    shuffle(actionBuffer);
+    for (let i = 0; i < Math.min(ACTION_LIMIT, actionBuffer.length); i++) {
+      const a = actionBuffer[i].split("|");
+      const f = Number(a[0]);
+      const t = Number(a[1]);
+      let fIndex = -1;
+      let tIndex = -1;
+      //find index for each
+      for (let j = 0; j < boardCols.length; j++) {
+        const blocks = boardCols[j].blocks;
+        if (blocks[0]?.id === f && fIndex === -1) {
+          fIndex = j;
+        }
+        if (blocks[0]?.id === t && tIndex === -1) {
+          tIndex = j;
+        }
+        //finds table
+        if (blocks.length === 0 && t === -1 && tIndex === -1) {
+          tIndex = j;
+        }
+      }
+      const el = (
+        <ActionCard
+          from={f}
+          to={t}
+          totalBlocks={totalBlocks}
+          key={actionBuffer[i]}
+          clickFunc={() => playAction(fIndex, tIndex, f, t)}
+        />
+      );
+      actionElements.push(el);
+    }
+    setActions(actionElements);
+  };
 
   const handleAIClick = (helperMode: boolean) => {
     if (endGame) return;                       // game already over
