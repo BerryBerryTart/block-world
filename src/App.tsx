@@ -551,34 +551,42 @@ function App() {
             </label>
           </div>
           <div className="divider"></div>
-          <div id="ai-mode">
-            <div className="labelText">Select AI Strategy</div>
-            <input
-              className="radioInput"
-              type="radio"
-              id={AIStrategy.PLAY_TO_WIN}
-              name={AIStrategy.PLAY_TO_WIN}
-              value={AIStrategy.PLAY_TO_WIN}
-              onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
-              checked={aIStrategy === AIStrategy.PLAY_TO_WIN}
-            />
-            <label htmlFor={AIStrategy.PLAY_TO_WIN} className="radioLabel">
-              Play To Win
-            </label>
-            <input
-              className="radioInput"
-              type="radio"
-              id={AIStrategy.PLAY_TO_STALL}
-              name={AIStrategy.PLAY_TO_STALL}
-              value={AIStrategy.PLAY_TO_STALL}
-              onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
-              checked={aIStrategy === AIStrategy.PLAY_TO_STALL}
-            />
-            <label htmlFor={AIStrategy.PLAY_TO_STALL} className="radioLabel">
-              Play To Stall
-            </label>
-          </div>
-          <div className="divider"></div>
+          {gameModeType === GameMode.VS_AI && (
+            <>
+              <div id="ai-mode">
+                <div className="labelText">Select AI Strategy</div>
+                <input
+                  className="radioInput"
+                  type="radio"
+                  id={AIStrategy.PLAY_TO_WIN}
+                  name={AIStrategy.PLAY_TO_WIN}
+                  value={AIStrategy.PLAY_TO_WIN}
+                  onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
+                  checked={aIStrategy === AIStrategy.PLAY_TO_WIN}
+                />
+                <label htmlFor={AIStrategy.PLAY_TO_WIN} className="radioLabel">
+                  Play To Win
+                </label>
+                <input
+                  className="radioInput"
+                  type="radio"
+                  id={AIStrategy.PLAY_TO_STALL}
+                  name={AIStrategy.PLAY_TO_STALL}
+                  value={AIStrategy.PLAY_TO_STALL}
+                  onChange={(e) => setAIStrategy(e.target.value as AIStrategy)}
+                  checked={aIStrategy === AIStrategy.PLAY_TO_STALL}
+                />
+                <label
+                  htmlFor={AIStrategy.PLAY_TO_STALL}
+                  className="radioLabel"
+                >
+                  Play To Stall
+                </label>
+              </div>
+              <div className="divider"></div>
+            </>
+          )}
+
           <button className="controlButton" onClick={handleHistoryToggle}>
             {showHistory ? "Hide Move History" : "Show Move History"}
           </button>

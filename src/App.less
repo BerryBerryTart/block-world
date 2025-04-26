@@ -25,9 +25,11 @@
       flex-direction: column;
       justify-content: start;
       margin-bottom: 8px;
+      animation: fadein 0.5s;
       .historyLabel {
         font-size: 12px;
         font-style: italic;
+        user-select: none;
       }
     }
   }
@@ -163,6 +165,10 @@
     background-color: #646464;
     cursor: pointer;
     height: 24px;
+    transition: all 0.5s;
+  }
+  .controlButton:hover {
+    background-color: #797979;
   }
   .divider {
     height: 1px;
@@ -172,6 +178,7 @@
   }
   .labelText {
     font-size: 14px;
+    user-select: none;
   }
   .radioInput {
     opacity: 0;
@@ -193,5 +200,16 @@
   .radioInput:checked + .radioLabel {
     background-color: #646464;
     color: white;
+  }
+}
+
+@keyframes fadein {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0%);
   }
 }
