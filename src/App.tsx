@@ -12,10 +12,10 @@ import {
 import cytoscape from "cytoscape";
 
 import "./App.less";
-import { getBlockColour } from "./utils";
+import { getBlockColour, rawStateKey } from "./utils";
 import resetIcon from "./assets/reset.svg";
 import { ActionCard } from "./ActionCard/ActionCard";
-import { astar, chooseAIMove } from "./ai/ai";
+import { astar, boardToState, chooseAIMove, stateKey } from "./ai/ai";
 
 function App() {
   const [currPlayer, setCurrPlayer] = useState<CurrentPlayer>(
@@ -40,6 +40,8 @@ function App() {
   );
   const [moveHistory, setMoveHistory] = useState<MoveHistory[]>([]);
   const [winner, setWinner] = useState<CurrentPlayer | undefined>(undefined);
+  const currentStateKey = useRef<string>("");
+  const seenStates = useRef<Set<string>>(new Set());
 
   //number of blocks changed so reset game
   useEffect(() => {
@@ -65,13 +67,7 @@ function App() {
       }
     };
     adjustGoalBoardCols();
-    const setupBoard = async () => {
-      const cols = randomiseBoard();
-      setBoard({ columns: cols });
-      const g = randomiseBoard(true);
-      setGoalBoard({ columns: g });
-    };
-    setupCols().then(() => setupBoard());
+    setupCols().then(() => resetGame());
     cyRef.current = cytoscape({
       container: document.getElementById("cy"),
       elements: gameState.current,
@@ -80,17 +76,20 @@ function App() {
         {
           selector: "node",
           style: {
-            "background-color": "#999",
-            label: "data(id)",
+            "background-color": "#636363",
+            "border-color": "#666",
+            label: "data(label)",
             color: "#FFF",
+            "text-valign": "center",
+            "text-halign": "center",
           },
         },
         {
           selector: "edge",
           style: {
             width: 3,
-            "line-color": "#ccc",
-            "target-arrow-color": "#ccc",
+            "line-color": "#636363",
+            "target-arrow-color": "#636363",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
           },
@@ -248,14 +247,25 @@ function App() {
     boardClone.columns[toIndex].blocks.unshift(blockBuffer);
 
     //graph stuff
+    // update state-space graph (using full state keys, not just blocks)
+    const stateArr = boardToState({ columns: boardClone.columns });
+    const newKey = stateKey(stateArr);
+    // add new node if first time seen
+    if (!seenStates.current.has(newKey)) {
+      const rawKey = rawStateKey(stateArr);
+      gameState.current.push({ data: { id: newKey, label: rawKey } });
+      seenStates.current.add(newKey);
+    }
+    // add edge from previous state → new state
     gameState.current.push({
       data: {
-        id: `${source}-${target}`,
-        source: source.toString(),
-        target: target > 0 ? target.toString() : "TABLE",
+        source: currentStateKey.current,
+        target: newKey,
+        id: `${currentStateKey.current}->${newKey}`,
       },
     });
-
+    // advance current state pointer
+    currentStateKey.current = newKey;
     //Append to move history
     const move: MoveHistory = {
       move: `${source}|${target}`,
@@ -267,7 +277,23 @@ function App() {
     setBoard(boardClone);
     const hasWon = endGameCheck(boardClone);
 
-    cyRef.current?.add(gameState.current);
+    const newEles = gameState.current.slice(-2);
+    cyRef.current?.add(newEles);
+
+    // re-layout (breadthfirst works well for a tree-like state‐space)
+    cyRef.current
+      ?.layout({
+        name: "breadthfirst",
+        directed: true,
+        padding: 20,
+        animate: true,
+        animationDuration: 300,
+      })
+      .run();
+
+    // finally, fit everything neatly into view again
+    cyRef.current?.fit(cyRef.current.elements(), 30);
+
     if (!hasWon) {
       setMoveCount(moveCount + 1);
       setCurrPlayer((prevState) => {
@@ -341,15 +367,6 @@ function App() {
     return cols;
   };
 
-  const initGraph = () => {
-    const buffer: Graph[] = [];
-    buffer.push({ data: { id: "TABLE" } });
-    for (let i = 1; i <= totalBlocks; i++) {
-      buffer.push({ data: { id: i.toString() } });
-    }
-    return buffer;
-  };
-
   const resetGraphView = () => {
     cyRef.current?.fit(undefined, 30);
   };
@@ -362,7 +379,13 @@ function App() {
     setGoalBoard({ columns: newGoal });
     setMoveCount(1);
     cyRef.current?.elements().remove();
-    gameState.current = initGraph();
+    const startArr = boardToState({ columns: newCols });
+    const canonKey = stateKey(startArr);
+    const rawKey = rawStateKey(startArr);
+    currentStateKey.current = canonKey;
+    seenStates.current.clear();
+    seenStates.current.add(canonKey);
+    gameState.current = [{ data: { id: canonKey, label: rawKey } }];
     cyRef.current?.add(gameState.current);
     cyRef.current?.layout({ name: "circle" }).run();
     setCurrPlayer(CurrentPlayer.PLAYER_1);

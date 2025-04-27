@@ -15,6 +15,7 @@ export interface Graph {
     id: string;
     source?: string;
     target?: string;
+    label?: string;
   };
 }
 

@@ -6,4 +6,13 @@ const getBlockColour = (index: number, totalBlocks: number): string => {
   return `hsl(${val}, 80%, 80%)`;
 };
 
-export { getBlockColour };
+// preserve exact left-to-right stacks (including empties)
+function rawStateKey(stateArr: number[][]): string {
+  // e.g. [ [], [2], [4], [3], [5], [1] ] → "2|4|3|5|1"
+  return stateArr
+    .map((stack) => stack.join(","))
+    .filter((el) => el !== "")
+    .join("|");
+}
+
+export { getBlockColour, rawStateKey };
